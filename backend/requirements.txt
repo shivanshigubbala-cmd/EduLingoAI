@@ -1,0 +1,7 @@
+# Fill in as P0-SRE1 / P0-SHR1 stack decisions are made.
+# Suggested starting points:
+# fastapi
+# uvicorn
+# sqlalchemy
+# alembic
+# pytest

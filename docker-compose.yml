@@ -1,0 +1,43 @@
+# Placeholder stack — Postgres + Qdrant are examples only.
+# Swap for whatever gets decided in P0-SRE2 (DB) and P0-SHR1 (vector store).
+version: "3.9"
+
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    env_file: .env
+    depends_on:
+      - backend
+
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    env_file: .env
+    depends_on:
+      - db
+      - vector-store
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-student_ai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-student_ai}
+      POSTGRES_DB: ${POSTGRES_DB:-student_ai_tool}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  vector-store:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - vector_data:/qdrant/storage
+
+volumes:
+  db_data:
+  vector_data:
