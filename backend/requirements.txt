@@ -5,3 +5,6 @@
 # sqlalchemy
 # alembic
 # pytest
+sqlalchemy
+alembic
+psycopg2-binary
