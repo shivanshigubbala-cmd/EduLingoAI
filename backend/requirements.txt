@@ -2,6 +2,7 @@
 # Suggested starting points:
 # fastapi
 # uvicorn
-# sqlalchemy
-# alembic
-# pytest
+sqlalchemy
+alembic
+psycopg2-binary
+pytest
