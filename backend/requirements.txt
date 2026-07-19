@@ -1,8 +1,18 @@
-# Fill in as P0-SRE1 / P0-SHR1 stack decisions are made.
-# Suggested starting points:
-# fastapi
-# uvicorn
+# Core
+fastapi
+uvicorn
 sqlalchemy
 alembic
 psycopg2-binary
+
+# LLM + Embeddings + Vector Store (P0-SHR1)
+anthropic
+openai
+qdrant-client
+
+# Config / settings management
+pydantic-settings
+python-dotenv
+
+# Testing
 pytest
