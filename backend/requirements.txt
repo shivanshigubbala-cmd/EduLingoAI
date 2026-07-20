@@ -10,6 +10,12 @@ anthropic
 openai
 qdrant-client
 
+# Auth (P0-SHI1)
+passlib[bcrypt]
+python-jose[cryptography]
+authlib
+itsdangerous
+
 # Config / settings management
 pydantic-settings
 python-dotenv

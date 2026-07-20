@@ -1,14 +1,31 @@
 # Architecture
 
-_Owner: Team — P0-TEAM1_
+## Auth stack
 
-To be filled in during Phase 0. Must cover, end to end:
+_Owner: Shreya — P0-SHI1_
 
-- **Auth** — stack decision (see P0-SHI1), session handling
-- **Ingestion** — upload -> storage -> PDF text extraction / OCR -> topic-tree extraction
-- **RAG** — vector store choice, embedding model, retrieval pipeline, cost/rate-limit notes (see P0-SHR1)
-- **Scheduling** — mastery-gap-driven priority scheduling
-- **Quiz flow** — generation, grading, feedback loop back into scheduling
+### Password auth
+Email + password. Passwords hashed with `passlib[bcrypt]` — never stored in plaintext.
+
+### OAuth
+Google only for v1. Covers the OAuth requirement without adding scope; most students
+already have a Google account. Implemented server-side with `authlib`.
+
+### Sessions
+Backend issues a JWT (`python-jose`) on successful login or OAuth callback, set as an
+**httpOnly, secure cookie**. The frontend never reads or stores the token directly — it
+just calls backend auth endpoints and the browser carries the session automatically.
+This avoids `localStorage`/XSS exposure and matches the `JWT_SECRET`,
+`OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET` fields already defined in `config.py`.
+
+### Protected routes
+Backend middleware verifies the JWT cookie on every request to a protected endpoint
+(feeds P1-SRE4). Frontend middleware checks a `/me` call and redirects to `/login` on
+failure (feeds P1-SHI3).
+
+### Wireframes
+Login and signup pages both offer email/password plus "Continue with Google".
+See `docs/wireframes/` (or attach the mockup image/link here once exported).
 
 ## LLM + vector-DB stack
 
