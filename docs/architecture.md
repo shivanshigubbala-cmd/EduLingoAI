@@ -2,11 +2,6 @@
 
 Task ref: `P0-TEAM1`. Related decisions: `P0-SHI1` (auth), `P0-SHR1` (LLM/vector stack).
 
-> ⚠️ Open question before this doc is finalized: the Open Risks sheet in the WBS lists
-> an "English-only" constraint, but the LLM section below (and the repo name/README)
-> designs for multilingual input (Hindi, Telugu, code-mixed). **Confirm with the team
-> which is actually in scope** and update the WBS Open Risks sheet to match before
-> sign-off — this changes how `ocr/` and `topic_tree/` need to behave.
 
 ## Auth stack
 
