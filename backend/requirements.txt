@@ -12,6 +12,7 @@ qdrant-client
 
 # Auth (P0-SHI1)
 passlib[bcrypt]
+bcrypt==4.0.1
 python-jose[cryptography]
 authlib
 itsdangerous

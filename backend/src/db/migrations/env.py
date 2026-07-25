@@ -5,48 +5,73 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-# Make `src` importable when alembic is run from backend/
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+# Make project root importable
+sys.path.append(
+    os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..")
+    )
+)
 
-from src.db.base import Base  # noqa: E402
-from src.db import models  # noqa: E402,F401  (import registers all tables on Base.metadata)
+from src.config import get_settings
+from src.db.base import Base
+from src.db import models  # noqa: F401
 
+# Alembic Config object
 config = context.config
 
+# Logging
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Pull the real connection string from the environment (matches docker-compose
-# POSTGRES_* vars) rather than the placeholder in alembic.ini.
-db_url = os.environ.get(
-    "DATABASE_URL",
-    "postgresql://{user}:{pw}@{host}:5432/{db}".format(
-        user=os.environ.get("POSTGRES_USER", "student_ai"),
-        pw=os.environ.get("POSTGRES_PASSWORD", "student_ai"),
-        host=os.environ.get("POSTGRES_HOST", "db"),
-        db=os.environ.get("POSTGRES_DB", "student_ai_tool"),
-    ),
-)
-config.set_main_option("sqlalchemy.url", db_url)
+# ------------------------------------------------------------------
+# Load database URL from application settings
+# ------------------------------------------------------------------
 
+settings = get_settings()
+
+config.set_main_option(
+    "sqlalchemy.url",
+    settings.DATABASE_URL,
+)
+
+# Metadata for autogenerate
 target_metadata = Base.metadata
 
 
-def run_migrations_offline():
+def run_migrations_offline() -> None:
+    """Run migrations in offline mode."""
+
     url = config.get_main_option("sqlalchemy.url")
-    context.configure(url=url, target_metadata=target_metadata, literal_binds=True)
+
+    context.configure(
+        url=url,
+        target_metadata=target_metadata,
+        literal_binds=True,
+        compare_type=True,
+        compare_server_default=True,
+    )
+
     with context.begin_transaction():
         context.run_migrations()
 
 
-def run_migrations_online():
+def run_migrations_online() -> None:
+    """Run migrations in online mode."""
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
+
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,
+            compare_server_default=True,
+        )
+
         with context.begin_transaction():
             context.run_migrations()
 

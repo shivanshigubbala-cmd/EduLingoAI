@@ -36,8 +36,65 @@ docker-compose.yml  full stack: frontend, backend, DB, vector store
 
 ## Getting started
 
+## Getting started
+
+### 1. Environment
 ```bash
 cp .env.example .env
+```
+Fill in real values for `JWT_SECRET`, `LLM_API_KEY`, `EMBEDDING_API_KEY` as needed.
+
+### 2. Database (Docker)
+```bash
+docker compose up -d db
+```
+
+### 3. Backend
+
+**Windows (PowerShell):**
+```powershell
+cd backend
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+**macOS/Linux:**
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Run migrations:
+```bash
+alembic upgrade head
+```
+
+Start the API:
+```bash
+uvicorn src.main:app --reload
+```
+
+Backend runs at `http://localhost:8000`. Interactive API docs (Swagger):
+`http://localhost:8000/docs`
+
+Run tests:
+```bash
+pytest
+```
+
+### 4. Frontend
+```bash
+cd frontend
+npm install
+npm run dev
+```
+Frontend runs at `http://localhost:3000`.
+
+### Full stack via Docker (alternative)
+```bash
 docker compose up
 ```
 
@@ -55,5 +112,8 @@ the task list. Task IDs (e.g. `P2-SHI4`) correspond to the project WBS.
 
 ## Status
 
-Project scaffold only — implementation not yet started. See the WBS for the
-full task breakdown, critical path, and open risks.
+## Status
+Phase 0 (scaffold, DB schema, auth stack, LLM/vector-DB decisions, architecture
+doc) and early Phase 1 (login/signup, session middleware, app shell, backend
+API + auth token verification) are complete. See the WBS for full task
+breakdown, critical path, and open risks.
