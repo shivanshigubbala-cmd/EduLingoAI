@@ -1,4 +1,4 @@
-"""Topic-tree persistence and retrieval module — P2-SHI5."""
+"""Topic-tree persistence and retrieval module — P2-SHI5 & P2-SHI6."""
 
 import uuid
 from collections import defaultdict
@@ -170,3 +170,74 @@ def get_topic_tree(
         "subject": subject_node.name,
         "units": units_list,
     }
+
+
+def update_topic(
+    db: Session,
+    user_id: uuid.UUID | str,
+    document_id: uuid.UUID | str,
+    topic_id: uuid.UUID | str,
+    name: str | None = None,
+    subtopics: list[str] | None = None,
+) -> SyllabusTopic | None:
+    """Partially update a single syllabus_topics node without deleting/reinserting the tree.
+
+    Leaves topic.mastery untouched.
+
+    Args:
+        db: SQLAlchemy DB Session.
+        user_id: Owner user UUID.
+        document_id: Originating document UUID.
+        topic_id: Target SyllabusTopic UUID to update.
+        name: Optional new name for the topic.
+        subtopics: Optional list of subtopic strings to replace existing subtopic children.
+
+    Returns:
+        Updated SyllabusTopic object, or None if not found / access denied.
+    """
+    u_id = uuid.UUID(str(user_id)) if isinstance(user_id, str) else user_id
+    d_id = uuid.UUID(str(document_id)) if isinstance(document_id, str) else document_id
+    t_id = uuid.UUID(str(topic_id)) if isinstance(topic_id, str) else topic_id
+
+    topic_node = (
+        db.query(SyllabusTopic)
+        .filter(
+            SyllabusTopic.id == t_id,
+            SyllabusTopic.user_id == u_id,
+            SyllabusTopic.document_id == d_id,
+        )
+        .first()
+    )
+    if not topic_node:
+        return None
+
+    if name is not None:
+        topic_node.name = name
+
+    if subtopics is not None:
+        # Delete existing subtopic children for this node
+        db.query(SyllabusTopic).filter(
+            SyllabusTopic.parent_id == topic_node.id,
+            SyllabusTopic.level == TopicLevel.subtopic,
+        ).delete(synchronize_session=False)
+
+        base_time = datetime.utcnow()
+        offset = 0
+        for st_name in subtopics:
+            offset += 1
+            st_node = SyllabusTopic(
+                id=uuid.uuid4(),
+                user_id=u_id,
+                document_id=d_id,
+                parent_id=topic_node.id,
+                name=st_name,
+                level=TopicLevel.subtopic,
+                mastery=None,
+                created_at=base_time + timedelta(microseconds=offset),
+            )
+            db.add(st_node)
+
+    topic_node.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(topic_node)
+    return topic_node
