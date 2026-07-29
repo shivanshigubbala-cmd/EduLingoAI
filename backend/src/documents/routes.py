@@ -5,6 +5,9 @@ Accepts pdf/png/jpg, stores the file on disk, writes a `documents` row
 """
 import uuid
 from pathlib import Path
+from src.ocr.pdf_extractor import extract_pdf_text_as_string, PDFExtractionError
+from src.topic_tree import extract_topic_tree, persist_topic_tree, get_topic_tree
+from src.topic_tree.schemas import TopicTreeResponse
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
@@ -78,3 +81,105 @@ async def upload_document(
         "filename": document.filename,
         "status": document.status.value,
     }
+
+
+@router.post("/{document_id}/extract")
+def extract_document_topics(
+    document_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Run the full pipeline: parse PDF text -> LLM topic-tree extraction -> persist.
+
+    Wires together P2-SHR3 (PDF text), P2-SHI4 (LLM extraction), and P2-SHI5
+    (persistence) — none of which were previously connected via HTTP.
+    """
+    document = (
+        db.query(Document)
+        .filter(Document.id == document_id, Document.user_id == user_id)
+        .first()
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    if document.mime_type != "application/pdf":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Topic extraction currently supports PDF only. "
+                "Image OCR (P2-SHR4) is not yet implemented."
+            ),
+        )
+
+    try:
+        parsed_text = extract_pdf_text_as_string(document.storage_path)
+    except PDFExtractionError as exc:
+        document.status = DocumentStatus.failed
+        db.commit()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    try:
+        tree = extract_topic_tree(parsed_text)
+    except ValueError as exc:
+        document.status = DocumentStatus.failed
+        db.commit()
+        raise HTTPException(
+            status_code=502,
+            detail=f"Topic-tree extraction failed: {exc}",
+        ) from exc
+
+    persist_topic_tree(db, user_id, document_id, tree)
+
+    document.status = DocumentStatus.parsed
+    db.commit()
+
+    return tree
+
+
+@router.get("/{document_id}/topics")
+def get_document_topics(
+    document_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Fetch the persisted topic tree for a document."""
+    document = (
+        db.query(Document)
+        .filter(Document.id == document_id, Document.user_id == user_id)
+        .first()
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    tree = get_topic_tree(db, user_id, document_id)
+    if tree is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No topics found for this document. Run extraction first.",
+        )
+
+    return tree
+
+
+@router.patch("/{document_id}/topics")
+def update_document_topics(
+    document_id: uuid.UUID,
+    tree: TopicTreeResponse,
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Save a user-edited topic tree (from the confirm/preview screen, P2-SRE5).
+
+    `tree` is validated against TopicTreeResponse before persisting, so a malformed
+    or empty body is rejected with a 422 instead of silently overwriting real data.
+    """
+    document = (
+        db.query(Document)
+        .filter(Document.id == document_id, Document.user_id == user_id)
+        .first()
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    persist_topic_tree(db, user_id, document_id, tree.model_dump())
+    return tree.model_dump()
