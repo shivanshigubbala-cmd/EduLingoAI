@@ -4,7 +4,7 @@ import json
 import re
 from typing import Any
 
-import anthropic
+import ollama
 
 from src.config import get_settings
 from src.topic_tree.schemas import TopicTreeResponse
@@ -48,13 +48,13 @@ def _clean_json_response(raw_response: str) -> str:
 
 def extract_topic_tree(
     parsed_text: str,
-    client: anthropic.Anthropic | None = None,
+    client: ollama.Client | None = None,
 ) -> dict[str, Any]:
     """Extract subject, units, topics, and subtopics from parsed text using LLM.
 
     Args:
         parsed_text: Plain text extracted from syllabus/notes.
-        client: Optional Anthropic client instance for dependency injection.
+        client: Optional Ollama client instance for dependency injection.
 
     Returns:
         A dictionary matching the TopicTreeResponse schema with mastery forced to None.
@@ -64,22 +64,19 @@ def extract_topic_tree(
     """
     settings = get_settings()
     if client is None:
-        client = anthropic.Anthropic(api_key=settings.LLM_API_KEY)
+        client = ollama.Client(host=getattr(settings, "OLLAMA_HOST", "http://localhost:11434"))
 
-    model_name = settings.LLM_MODEL
+    model_name = settings.LLM_MODEL  # e.g. "llama3.2:1b" — see note below on config
     user_prompt = f"Extract the topic tree from the following parsed text:\n\n{parsed_text}"
 
-    messages = [{"role": "user", "content": user_prompt}]
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ]
 
     # Initial LLM call
-    response = client.messages.create(
-        model=model_name,
-        max_tokens=2048,
-        system=SYSTEM_PROMPT,
-        messages=messages,
-    )
-
-    raw_text = response.content[0].text
+    response = client.chat(model=model_name, messages=messages)
+    raw_text = response["message"]["content"]
     cleaned_text = _clean_json_response(raw_text)
 
     try:
@@ -95,14 +92,8 @@ def extract_topic_tree(
         messages.append({"role": "assistant", "content": raw_text})
         messages.append({"role": "user", "content": corrective_prompt})
 
-        retry_response = client.messages.create(
-            model=model_name,
-            max_tokens=2048,
-            system=SYSTEM_PROMPT,
-            messages=messages,
-        )
-
-        retry_raw_text = retry_response.content[0].text
+        retry_response = client.chat(model=model_name, messages=messages)
+        retry_raw_text = retry_response["message"]["content"]
         retry_cleaned = _clean_json_response(retry_raw_text)
 
         try:

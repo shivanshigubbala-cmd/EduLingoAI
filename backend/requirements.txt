@@ -6,7 +6,7 @@ alembic
 psycopg2-binary
 
 # LLM + Embeddings + Vector Store (P0-SHR1)
-anthropic
+ollama
 openai
 qdrant-client
 
