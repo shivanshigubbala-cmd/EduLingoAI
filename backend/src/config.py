@@ -33,7 +33,8 @@ class Settings(BaseSettings):
 
     # ── LLM — Anthropic Claude (P0-SHR1) ─────────────────────────────────
     LLM_API_KEY: str = ""
-    LLM_MODEL: str = "claude-sonnet-4-20250514"
+    LLM_MODEL: str = "llama3.2:1b"
+    OLLAMA_HOST: str = "http://localhost:11434"
     LLM_FAST_MODEL: str = "claude-haiku-3"
 
     # ── Embeddings — OpenAI text-embedding-3-small (P0-SHR1) ──────────────
