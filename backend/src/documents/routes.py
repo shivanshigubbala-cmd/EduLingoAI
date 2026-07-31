@@ -3,18 +3,25 @@
 Accepts pdf/png/jpg, stores the file on disk, writes a `documents` row
 (schema from P0-SRE2 / db/models.py), and returns a document_id.
 """
+import json
 import uuid
 from pathlib import Path
 from src.ocr.pdf_extractor import extract_pdf_text_as_string, PDFExtractionError
 from src.topic_tree import extract_topic_tree, persist_topic_tree, get_topic_tree
 from src.topic_tree.schemas import TopicTreeResponse
+from src.diagnostic import (
+    generate_diagnostic_questions,
+    create_diagnostic_session,
+    DiagnosticQuestionPublic,
+    DiagnosticSessionResponse,
+)
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import get_current_user_id
 from src.db.session import get_db
-from src.db.models import Document, DocumentStatus
+from src.db.models import Document, DocumentStatus, SyllabusTopic, TopicLevel
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -183,3 +190,64 @@ def update_document_topics(
 
     persist_topic_tree(db, user_id, document_id, tree.model_dump())
     return tree.model_dump()
+
+
+@router.post("/{document_id}/diagnostic", response_model=DiagnosticSessionResponse)
+def generate_diagnostic(
+    document_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Generate a capped diagnostic question set spanning this document's topic tree.
+
+    P3-SRE6. Depends on P2-SHI5 (topic-tree persistence) — reads topic-level
+    rows directly from syllabus_topics rather than re-running extraction.
+    """
+    document = (
+        db.query(Document)
+        .filter(Document.id == document_id, Document.user_id == user_id)
+        .first()
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    topic_rows = (
+        db.query(SyllabusTopic)
+        .filter(
+            SyllabusTopic.user_id == user_id,
+            SyllabusTopic.document_id == document_id,
+            SyllabusTopic.level == TopicLevel.topic,
+        )
+        .all()
+    )
+    if not topic_rows:
+        raise HTTPException(
+            status_code=404,
+            detail="No topics found for this document. Run extraction first.",
+        )
+
+    topic_names = [t.name for t in topic_rows]
+
+    try:
+        questions = generate_diagnostic_questions(topic_names)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Diagnostic question generation failed: {exc}",
+        ) from exc
+
+    session, chat_messages = create_diagnostic_session(db, user_id, document_id, questions)
+
+    public_questions = [
+        DiagnosticQuestionPublic(
+            id=msg.id,
+            topic_id=msg.topic_reference_id,
+            topic_name=json.loads(msg.content)["topic_name"],
+            question_type=json.loads(msg.content)["question_type"],
+            question_text=json.loads(msg.content)["question_text"],
+            options=json.loads(msg.content).get("options"),
+        )
+        for msg in chat_messages
+    ]
+
+    return DiagnosticSessionResponse(session_id=session.id, questions=public_questions)
