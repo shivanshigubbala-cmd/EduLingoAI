@@ -45,3 +45,13 @@ class DiagnosticQuestionPublic(BaseModel):
 class DiagnosticSessionResponse(BaseModel):
     session_id: uuid.UUID
     questions: list[DiagnosticQuestionPublic]
+
+class AnswerSubmission(BaseModel):
+    question_id: uuid.UUID
+    answer_text: str
+
+
+class AnswerResult(BaseModel):
+    is_correct: bool
+    next_question: DiagnosticQuestionPublic | None
+    session_complete: bool
