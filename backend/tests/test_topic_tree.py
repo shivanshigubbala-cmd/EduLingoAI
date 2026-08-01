@@ -30,13 +30,9 @@ def db_session():
         session.close()
 
 
-def _make_mock_message(content_text: str):
-    """Helper to construct a mock Anthropic message response."""
-    mock_content = MagicMock()
-    mock_content.text = content_text
-    mock_response = MagicMock()
-    mock_response.content = [mock_content]
-    return mock_response
+def _make_mock_message(content_text: str) -> dict:
+    """Helper to construct a mock Ollama chat() response."""
+    return {"message": {"content": content_text}}
 
 
 class TestExtractTopicTree:
@@ -88,7 +84,7 @@ class TestExtractTopicTree:
         }
 
         mock_client = MagicMock()
-        mock_client.messages.create.return_value = _make_mock_message(
+        mock_client.chat.return_value = _make_mock_message(
             json.dumps(mock_json_response)
         )
 
@@ -127,14 +123,14 @@ class TestExtractTopicTree:
         }
 
         mock_client = MagicMock()
-        mock_client.messages.create.side_effect = [
+        mock_client.chat.side_effect = [
             _make_mock_message("{invalid_json_text..."),  # 1st attempt fails
             _make_mock_message(json.dumps(valid_json_response)),  # 2nd attempt succeeds
         ]
 
         result = extract_topic_tree(syllabus_text, client=mock_client)
 
-        assert mock_client.messages.create.call_count == 2
+        assert mock_client.chat.call_count == 2
         assert result["subject"] == "Chemistry"
         assert result["units"][0]["topics"][0]["mastery"] is None
 
@@ -159,7 +155,7 @@ class TestExtractTopicTree:
         }
 
         mock_client = MagicMock()
-        mock_client.messages.create.return_value = _make_mock_message(
+        mock_client.chat.return_value = _make_mock_message(
             json.dumps(hallucinated_json_response)
         )
 
@@ -175,7 +171,7 @@ class TestExtractTopicTree:
         syllabus_text = "Math Syllabus"
 
         mock_client = MagicMock()
-        mock_client.messages.create.side_effect = [
+        mock_client.chat.side_effect = [
             _make_mock_message("NOT JSON"),
             _make_mock_message("STILL NOT JSON"),
         ]
@@ -291,4 +287,3 @@ class TestTopicTreePersistence:
         """Querying get_topic_tree for non-existent user_id/document_id returns None."""
         res = get_topic_tree(db_session, user_id=uuid.uuid4(), document_id=uuid.uuid4())
         assert res is None
-

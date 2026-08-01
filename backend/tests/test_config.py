@@ -1,22 +1,22 @@
 """Tests for backend/src/config.py — P0-SHR1 config management."""
 
-import os
-from importlib import reload
-from unittest.mock import patch
-
 import pytest
 
 
 def _fresh_settings(**env_overrides):
-    """Helper: reload config module and get settings with controlled env vars."""
-    from src import config
+    """Helper: get a fresh Settings instance, ignoring any real .env file on
+    disk, using only explicitly provided overrides (falls back to field
+    defaults otherwise). Passing _env_file=None prevents pydantic-settings
+    from reading the actual .env file, which previously leaked real local
+    secrets into tests expecting defaults.
+    """
+    from src.config import Settings, get_settings
 
-    with patch.dict(os.environ, env_overrides, clear=True):
-        config.get_settings.cache_clear()
-        try:
-            return config.get_settings()
-        finally:
-            config.get_settings.cache_clear()
+    get_settings.cache_clear()
+    try:
+        return Settings(_env_file=None, **env_overrides)
+    finally:
+        get_settings.cache_clear()
 
 
 class TestSettingsLoadCorrectly:
@@ -44,7 +44,7 @@ class TestDefaultModelValues:
 
     def test_llm_model_defaults(self):
         settings = _fresh_settings()
-        assert settings.LLM_MODEL == "claude-sonnet-4-20250514"
+        assert settings.LLM_MODEL == "llama3.2:1b"
 
     def test_llm_fast_model_defaults(self):
         settings = _fresh_settings()

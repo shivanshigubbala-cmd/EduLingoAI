@@ -1,4 +1,4 @@
-"""Diagnostic answer schemas — P3-SHI6 stub input boundary."""
+"""Pydantic schemas for diagnostic question generation and scoring."""
 
 import uuid
 from enum import Enum
@@ -57,6 +57,7 @@ class AnswerResult(BaseModel):
     is_correct: bool
     next_question: DiagnosticQuestionPublic | None
     session_complete: bool
+    answered_topic_id: uuid.UUID | None = None
 
 
 class DiagnosticAnswer(BaseModel):
@@ -85,7 +86,7 @@ def adapt_answer_result(result: AnswerResult) -> DiagnosticAnswer:
     next_q = result.next_question
     return DiagnosticAnswer(
         is_correct=result.is_correct,
-        topic_id=next_q.topic_id if next_q else None,
+        topic_id=result.answered_topic_id,
         question=next_q.question_text if next_q else None,
         session_complete=result.session_complete,
         difficulty=0.5,
