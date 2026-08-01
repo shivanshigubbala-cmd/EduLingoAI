@@ -52,7 +52,12 @@ def submit_answer(
     if next_q is None:
         session.ended_at = datetime.utcnow()
         db.commit()
-        return AnswerResult(is_correct=is_correct, next_question=None, session_complete=True)
+        return AnswerResult(
+            is_correct=is_correct,
+            next_question=None,
+            session_complete=True,
+            answered_topic_id=last_topic_id,
+        )
 
     next_data = json.loads(next_q.content)
     next_public = DiagnosticQuestionPublic(
@@ -64,4 +69,9 @@ def submit_answer(
         options=next_data.get("options"),
     )
 
-    return AnswerResult(is_correct=is_correct, next_question=next_public, session_complete=False)
+    return AnswerResult(
+        is_correct=is_correct,
+        next_question=next_public,
+        session_complete=False,
+        answered_topic_id=last_topic_id,
+    )
