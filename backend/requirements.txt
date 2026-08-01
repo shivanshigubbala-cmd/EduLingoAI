@@ -24,3 +24,4 @@ python-dotenv
 pytest
 python-multipart
 PyMuPDF
+requests

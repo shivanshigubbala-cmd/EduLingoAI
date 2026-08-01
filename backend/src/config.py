@@ -33,6 +33,7 @@ class Settings(BaseSettings):
 
     # ── LLM — Anthropic Claude (P0-SHR1) ─────────────────────────────────
     LLM_API_KEY: str = ""
+    OCR_SPACE_API_KEY: str = ""
     LLM_MODEL: str = "llama3.2:1b"
     OLLAMA_HOST: str = "http://localhost:11434"
     LLM_FAST_MODEL: str = "claude-haiku-3"
