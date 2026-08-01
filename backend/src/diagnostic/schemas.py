@@ -55,3 +55,4 @@ class AnswerResult(BaseModel):
     is_correct: bool
     next_question: DiagnosticQuestionPublic | None
     session_complete: bool
+    answered_topic_id: uuid.UUID | None = None
