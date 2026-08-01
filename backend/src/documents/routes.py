@@ -7,6 +7,7 @@ import json
 import uuid
 from pathlib import Path
 from src.ocr.pdf_extractor import extract_pdf_text_as_string, PDFExtractionError
+from src.ocr.handwriting_ocr import transcribe_handwriting, OCRError
 from src.topic_tree import extract_topic_tree, persist_topic_tree, get_topic_tree
 from src.topic_tree.schemas import TopicTreeResponse
 from src.diagnostic import (
@@ -20,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import get_current_user_id
+from src.config import get_settings
 from src.db.session import get_db
 from src.db.models import Document, DocumentStatus, SyllabusTopic, TopicLevel
 
@@ -33,6 +35,8 @@ ALLOWED_MIME_TYPES = {
     "image/png": ".png",
     "image/jpeg": ".jpg",
 }
+
+IMAGE_MIME_TYPES = {"image/png", "image/jpeg"}
 
 MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB
 
@@ -96,10 +100,11 @@ def extract_document_topics(
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    """Run the full pipeline: parse PDF text -> LLM topic-tree extraction -> persist.
+    """Run the full pipeline: parse text (PDF or handwritten image) -> LLM
+    topic-tree extraction -> persist.
 
-    Wires together P2-SHR3 (PDF text), P2-SHI4 (LLM extraction), and P2-SHI5
-    (persistence) — none of which were previously connected via HTTP.
+    Wires together P2-SHR3 (PDF text), P2-SHR4 (handwriting OCR), P2-SHI4
+    (LLM extraction), and P2-SHI5 (persistence).
     """
     document = (
         db.query(Document)
@@ -109,21 +114,36 @@ def extract_document_topics(
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found.")
 
-    if document.mime_type != "application/pdf":
+    confidence_flag = False
+
+    if document.mime_type == "application/pdf":
+        try:
+            parsed_text = extract_pdf_text_as_string(document.storage_path)
+        except PDFExtractionError as exc:
+            document.status = DocumentStatus.failed
+            db.commit()
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    elif document.mime_type in IMAGE_MIME_TYPES:
+        settings = get_settings()
+        try:
+            ocr_result = transcribe_handwriting(
+                document.storage_path, settings.OCR_SPACE_API_KEY
+            )
+        except OCRError as exc:
+            document.status = DocumentStatus.failed
+            db.commit()
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        parsed_text = ocr_result["text"]
+        confidence_flag = ocr_result["confidence_flag"]
+        document.ocr_confidence = ocr_result["confidence"]
+
+    else:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Topic extraction currently supports PDF only. "
-                "Image OCR (P2-SHR4) is not yet implemented."
-            ),
+            detail=f"Unsupported file type for extraction: '{document.mime_type}'.",
         )
-
-    try:
-        parsed_text = extract_pdf_text_as_string(document.storage_path)
-    except PDFExtractionError as exc:
-        document.status = DocumentStatus.failed
-        db.commit()
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     try:
         tree = extract_topic_tree(parsed_text)
@@ -140,6 +160,11 @@ def extract_document_topics(
     document.status = DocumentStatus.parsed
     db.commit()
 
+    # Let the confirm screen (P2-SRE5) warn the student when handwriting was
+    # low-confidence, so they know to double-check the extracted topics
+    # rather than trusting them blindly.
+    if confidence_flag:
+        return {**tree, "ocr_confidence_flag": True}
     return tree
 
 
