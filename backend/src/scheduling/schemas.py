@@ -40,3 +40,7 @@ class ScheduleVersion(BaseModel):
     version_id: uuid.UUID
     created_at: datetime
     plan: SchedulePlan
+class ScheduleExplanation(BaseModel):
+    """A chat-style message explaining the reasoning behind a schedule."""
+
+    message: str
