@@ -100,6 +100,7 @@ class SessionType(str, enum.Enum):
     diagnostic = "diagnostic"
     chat = "chat"
     quiz = "quiz"
+    schedule = "schedule"
 
 
 class Session(Base):
