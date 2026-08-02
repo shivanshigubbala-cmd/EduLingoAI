@@ -1,4 +1,5 @@
-from datetime import date
+import uuid
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -31,3 +32,11 @@ class SchedulePlan(BaseModel):
     """Daily study plan ordered by weak topics first."""
 
     days: list[ScheduleDay]
+
+
+class ScheduleVersion(BaseModel):
+    """An immutable, persisted schedule version."""
+
+    version_id: uuid.UUID
+    created_at: datetime
+    plan: SchedulePlan
