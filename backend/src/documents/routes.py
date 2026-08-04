@@ -10,6 +10,7 @@ from src.ocr.pdf_extractor import extract_pdf_text_as_string, PDFExtractionError
 from src.ocr.handwriting_ocr import transcribe_handwriting, OCRError
 from src.topic_tree import extract_topic_tree, persist_topic_tree, get_topic_tree
 from src.topic_tree.schemas import TopicTreeResponse
+from src.rag.store import embed_document_topics
 from src.diagnostic import (
     generate_diagnostic_questions,
     create_diagnostic_session,
@@ -276,3 +277,24 @@ def generate_diagnostic(
     ]
 
     return DiagnosticSessionResponse(session_id=session.id, questions=public_questions)
+@router.post("/{document_id}/embed")
+def embed_document(
+    document_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Embed a document's topic tree into the vector store (P5-SRE9)."""
+    document = (
+        db.query(Document)
+        .filter(Document.id == document_id, Document.user_id == user_id)
+        .first()
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    try:
+        count = embed_document_topics(db, user_id, document_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return {"embedded_count": count}
