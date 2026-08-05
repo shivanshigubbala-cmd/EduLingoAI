@@ -11,6 +11,8 @@ from src.ocr.handwriting_ocr import transcribe_handwriting, OCRError
 from src.topic_tree import extract_topic_tree, persist_topic_tree, get_topic_tree
 from src.topic_tree.schemas import TopicTreeResponse
 from src.rag.store import embed_document_topics
+from src.quiz.generator import generate_quiz_questions
+from src.quiz.schemas import QuizResponse, QuizQuestionPublic
 from src.diagnostic import (
     generate_diagnostic_questions,
     create_diagnostic_session,
@@ -298,3 +300,70 @@ def embed_document(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     return {"embedded_count": count}
+@router.post("/{document_id}/quiz", response_model=QuizResponse)
+def generate_quiz(
+    document_id: uuid.UUID,
+    max_questions: int = 10,
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Generate a quiz weighted toward this document's lower-mastery topics.
+
+    P6-SHR8. Depends on P2-SHI5 (topic-tree persistence, for topic rows) and
+    P3-SHI6 (mastery scoring, for the weighting itself) — reads mastery
+    directly from syllabus_topics, same as the diagnostic endpoint reads
+    topic names.
+
+    TODO(P6-SHR9): correct_answer is generated but NOT persisted anywhere —
+    QuizResult has no column for it (only student_answer, is_correct, score,
+    rationale). Auto-grading will need either a new migration adding a
+    correct_answer column, or some other place to stash the answer key
+    between generation and grading. Flagging now so it isn't a surprise.
+    """
+    document = (
+        db.query(Document)
+        .filter(Document.id == document_id, Document.user_id == user_id)
+        .first()
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    topic_rows = (
+        db.query(SyllabusTopic)
+        .filter(
+            SyllabusTopic.user_id == user_id,
+            SyllabusTopic.document_id == document_id,
+            SyllabusTopic.level == TopicLevel.topic,
+        )
+        .all()
+    )
+    if not topic_rows:
+        raise HTTPException(
+            status_code=404,
+            detail="No topics found for this document. Run extraction first.",
+        )
+
+    topics = [{"id": t.id, "name": t.name, "mastery": t.mastery} for t in topic_rows]
+
+    try:
+        questions = generate_quiz_questions(topics, max_questions=max_questions)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Quiz generation failed: {exc}",
+        ) from exc
+
+    quiz_id = uuid.uuid4()
+    public_questions = [
+        QuizQuestionPublic(
+            id=q["id"],
+            topic_id=q["topic_id"],
+            topic_name=q["topic_name"],
+            question_type=q["question_type"],
+            question_text=q["question_text"],
+            options=q.get("options"),
+        )
+        for q in questions
+    ]
+
+    return QuizResponse(quiz_id=quiz_id, questions=public_questions)
