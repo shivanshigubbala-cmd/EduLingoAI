@@ -26,8 +26,7 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import get_current_user_id
 from src.config import get_settings
 from src.db.session import get_db
-from src.db.models import Document, DocumentStatus, SyllabusTopic, TopicLevel
-
+from src.db.models import Document, DocumentStatus, SyllabusTopic, TopicLevel, QuizResult
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 STORAGE_ROOT = Path("uploads")
@@ -307,18 +306,20 @@ def generate_quiz(
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    """Generate a quiz weighted toward this document's lower-mastery topics.
+    """Generate a quiz weighted toward this document's lower-mastery topics,
+    and persist each question (answer key included) for later grading.
 
-    P6-SHR8. Depends on P2-SHI5 (topic-tree persistence, for topic rows) and
-    P3-SHI6 (mastery scoring, for the weighting itself) — reads mastery
-    directly from syllabus_topics, same as the diagnostic endpoint reads
-    topic names.
+    P6-SHR8/P6-SHR9. Depends on P2-SHI5 (topic-tree persistence, for topic
+    rows) and P3-SHI6 (mastery scoring, for the weighting itself) — reads
+    mastery directly from syllabus_topics, same as the diagnostic endpoint
+    reads topic names.
 
-    TODO(P6-SHR9): correct_answer is generated but NOT persisted anywhere —
-    QuizResult has no column for it (only student_answer, is_correct, score,
-    rationale). Auto-grading will need either a new migration adding a
-    correct_answer column, or some other place to stash the answer key
-    between generation and grading. Flagging now so it isn't a surprise.
+    Persistence note: each question (including correct_answer and
+    question_type) is stored as JSON in QuizResult.question — mirroring how
+    the diagnostic module stores its answer key in ChatMessage.content
+    (src/diagnostic/persistence.py). This needed no schema migration.
+    The QuizResult.id becomes the canonical question_id used by
+    POST /quiz/{quiz_result_id}/answer to grade it later.
     """
     document = (
         db.query(Document)
@@ -354,16 +355,29 @@ def generate_quiz(
         ) from exc
 
     quiz_id = uuid.uuid4()
-    public_questions = [
-        QuizQuestionPublic(
-            id=q["id"],
+    public_questions = []
+
+    for q in questions:
+        result_row = QuizResult(
+            user_id=user_id,
             topic_id=q["topic_id"],
-            topic_name=q["topic_name"],
-            question_type=q["question_type"],
-            question_text=q["question_text"],
-            options=q.get("options"),
+            quiz_id=quiz_id,
+            question=json.dumps(q, default=str),
         )
-        for q in questions
-    ]
+        db.add(result_row)
+        db.flush()  # get result_row.id without committing yet
+
+        public_questions.append(
+            QuizQuestionPublic(
+                id=result_row.id,
+                topic_id=q["topic_id"],
+                topic_name=q["topic_name"],
+                question_type=q["question_type"],
+                question_text=q["question_text"],
+                options=q.get("options"),
+            )
+        )
+
+    db.commit()
 
     return QuizResponse(quiz_id=quiz_id, questions=public_questions)
