@@ -8,6 +8,7 @@ node_modules/
 out/
 frontend/.next/
 frontend/node_modules/
+frontend/tsconfig.tsbuildinfo
 
 # Python / backend
 __pycache__/
