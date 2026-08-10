@@ -66,6 +66,24 @@ export interface QuizAnswerResult {
   rationale: string;
 }
 
+export interface TopicScoreBreakdown {
+  topic_id: string;
+  topic_name: string;
+  questions_total: number;
+  questions_answered: number;
+  average_score: number | null;
+  is_weak: boolean;
+}
+
+export interface QuizScoreAnalysis {
+  quiz_id: string;
+  total_questions: number;
+  graded_questions: number;
+  average_score: number | null;
+  weak_threshold: number;
+  topics: TopicScoreBreakdown[];
+}
+
 export async function generateQuiz(
   documentId: string,
   maxQuestions = 10,
@@ -84,6 +102,10 @@ export async function submitQuizAnswer(
     method: "POST",
     body: JSON.stringify({ answer_text: answerText }),
   });
+}
+
+export async function getQuizAnalysis(quizId: string): Promise<QuizScoreAnalysis> {
+  return request<QuizScoreAnalysis>(`/quiz/${quizId}/analysis`);
 }
 
 export { QuizError };
