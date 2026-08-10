@@ -9,7 +9,9 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from src.db.models import QuizResult, SyllabusTopic, TopicLevel
+from src.db.models import FeedbackSuggestion, QuizResult, ScheduleMilestone, SyllabusTopic, TopicLevel
+from src.quiz.analysis import DEFAULT_WEAK_THRESHOLD
+from src.scheduling.persistence import get_schedule_version
 from src.diagnostic.scoring import apply_mastery_scores
 from src.scheduling.persistence import persist_schedule
 from src.scheduling.schemas import ScheduleRequest, TopicPlanItem
@@ -26,6 +28,80 @@ class FeedbackResult:
     quiz_id: uuid.UUID
     updated_topic_count: int
     schedule_version_ids: list[uuid.UUID]
+
+
+def _as_uuid(value: uuid.UUID | str) -> uuid.UUID:
+    return uuid.UUID(str(value)) if isinstance(value, str) else value
+
+
+def _create_suggestion(
+    db: Session,
+    user_id: uuid.UUID,
+    topic: SyllabusTopic,
+    trigger: str,
+) -> FeedbackSuggestion:
+    """Return one active check-in suggestion per user/topic/trigger."""
+    existing = (
+        db.query(FeedbackSuggestion)
+        .filter(
+            FeedbackSuggestion.user_id == user_id,
+            FeedbackSuggestion.topic_id == topic.id,
+            FeedbackSuggestion.trigger == trigger,
+            FeedbackSuggestion.action == "quiz",
+            FeedbackSuggestion.active.is_(True),
+        )
+        .first()
+    )
+    if existing is not None:
+        return existing
+
+    suggestion = FeedbackSuggestion(
+        user_id=user_id,
+        topic_id=topic.id,
+        trigger=trigger,
+        action="quiz",
+        message=f"Check in on {topic.name}: take a follow-up quiz to reinforce it.",
+    )
+    db.add(suggestion)
+    db.commit()
+    db.refresh(suggestion)
+    return suggestion
+
+
+def get_active_suggestions(
+    db: Session, user_id: uuid.UUID | str
+) -> list[FeedbackSuggestion]:
+    """Return active proactive prompts, newest first, for their owner only."""
+    return (
+        db.query(FeedbackSuggestion)
+        .filter(
+            FeedbackSuggestion.user_id == _as_uuid(user_id),
+            FeedbackSuggestion.active.is_(True),
+        )
+        .order_by(FeedbackSuggestion.created_at.desc(), FeedbackSuggestion.id.desc())
+        .all()
+    )
+
+
+def dismiss_suggestion(
+    db: Session, user_id: uuid.UUID | str, suggestion_id: uuid.UUID | str
+) -> bool:
+    """Dismiss one owned suggestion so a future event may produce a new one."""
+    suggestion = (
+        db.query(FeedbackSuggestion)
+        .filter(
+            FeedbackSuggestion.id == _as_uuid(suggestion_id),
+            FeedbackSuggestion.user_id == _as_uuid(user_id),
+            FeedbackSuggestion.active.is_(True),
+        )
+        .first()
+    )
+    if suggestion is None:
+        return False
+    suggestion.active = False
+    suggestion.dismissed_at = datetime.utcnow()
+    db.commit()
+    return True
 
 
 def apply_quiz_feedback(
@@ -100,6 +176,11 @@ def apply_quiz_feedback(
         )
         schedule_version_ids.append(persist_schedule(db, owner_id, plan).version_id)
 
+        topic_by_id = {topic.id: topic for topic in topics}
+        for topic_id, score in averaged_scores.items():
+            if score < DEFAULT_WEAK_THRESHOLD:
+                _create_suggestion(db, owner_id, topic_by_id[topic_id], "quiz")
+
     applied_at = datetime.utcnow()
     for result, _ in rows:
         result.feedback_applied_at = applied_at
@@ -110,3 +191,61 @@ def apply_quiz_feedback(
         updated_topic_count=updated_topic_count,
         schedule_version_ids=schedule_version_ids,
     )
+
+
+def complete_schedule_day(
+    db: Session,
+    user_id: uuid.UUID | str,
+    schedule_id: uuid.UUID | str,
+    day_index: int,
+) -> ScheduleMilestone:
+    """Persist a schedule-day milestone and proactively suggest a quiz check-in.
+
+    A milestone is deliberately explicit: the learner marks a day in a saved
+    schedule version complete.  Repeating the same completion is idempotent.
+    """
+    owner_id = _as_uuid(user_id)
+    version = get_schedule_version(db, owner_id, schedule_id)
+    if version is None:
+        raise ValueError("Schedule not found.")
+    if day_index < 0 or day_index >= len(version.plan.days):
+        raise ValueError("Schedule day not found.")
+
+    schedule_uuid = _as_uuid(schedule_id)
+    milestone = (
+        db.query(ScheduleMilestone)
+        .filter(
+            ScheduleMilestone.user_id == owner_id,
+            ScheduleMilestone.schedule_id == schedule_uuid,
+            ScheduleMilestone.day_index == day_index,
+        )
+        .first()
+    )
+    if milestone is not None:
+        return milestone
+
+    milestone = ScheduleMilestone(
+        user_id=owner_id, schedule_id=schedule_uuid, day_index=day_index
+    )
+    db.add(milestone)
+    db.commit()
+    db.refresh(milestone)
+
+    for item in version.plan.days[day_index].topics:
+        try:
+            topic_id = uuid.UUID(item.id)
+        except ValueError:
+            continue
+        topic = (
+            db.query(SyllabusTopic)
+            .filter(SyllabusTopic.id == topic_id, SyllabusTopic.user_id == owner_id)
+            .first()
+        )
+        if topic is not None:
+            # Day-completion suggestions are reinforcement check-ins for newly completed
+            # study items, unlike quiz-completion suggestions which are remediation check-ins
+            # filtered by weak mastery (< 0.6).
+            _create_suggestion(db, owner_id, topic, "schedule_milestone")
+    return milestone
+
+

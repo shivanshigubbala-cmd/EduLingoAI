@@ -17,6 +17,7 @@ from src.scheduling.persistence import (
 )
 from src.scheduling.schemas import ScheduleRequest, ScheduleVersion
 from src.scheduling.service import build_schedule
+from src.feedback import complete_schedule_day
 
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 
@@ -60,6 +61,20 @@ def read_schedule_version(
     if schedule is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule version not found")
     return schedule
+
+
+@router.post("/{version_id}/days/{day_index}/complete", status_code=status.HTTP_204_NO_CONTENT)
+def complete_day(
+    version_id: uuid.UUID,
+    day_index: int,
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+) -> None:
+    """Mark a planned day complete, which creates a proactive quiz check-in."""
+    try:
+        complete_schedule_day(db, user_id, version_id, day_index)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 @router.get("/current/explain", response_model=ScheduleExplanation)
 def explain_current_schedule(
     db: Session = Depends(get_db),

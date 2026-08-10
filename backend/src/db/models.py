@@ -21,7 +21,8 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, String, Boolean, Float, ForeignKey, DateTime, Enum, Text, Integer
+    Column, String, Boolean, Float, ForeignKey, DateTime, Enum, Text, Integer,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
@@ -156,3 +157,40 @@ class QuizResult(Base):
 
     owner = relationship("User", back_populates="quiz_results")
     topic = relationship("SyllabusTopic")
+
+
+class FeedbackSuggestion(Base):
+    """A proactive next-check-in prompt that a client can poll and surface."""
+
+    __tablename__ = "feedback_suggestions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    topic_id = Column(UUID(as_uuid=True), ForeignKey("syllabus_topics.id"), nullable=False)
+    trigger = Column(String, nullable=False)  # quiz | schedule_milestone
+    action = Column(String, nullable=False)  # quiz | diagnostic
+    message = Column(Text, nullable=False)
+    active = Column(Boolean, default=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    dismissed_at = Column(DateTime, nullable=True)
+
+    owner = relationship("User")
+    topic = relationship("SyllabusTopic")
+
+
+class ScheduleMilestone(Base):
+    """An explicitly completed day in one immutable schedule version."""
+
+    __tablename__ = "schedule_milestones"
+    __table_args__ = (
+        UniqueConstraint("user_id", "schedule_id", "day_index", name="uq_schedule_milestone_day"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    schedule_id = Column(UUID(as_uuid=True), ForeignKey("sessions.id"), nullable=False, index=True)
+    day_index = Column(Integer, nullable=False)
+    completed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    owner = relationship("User")
+    schedule = relationship("Session")
