@@ -19,6 +19,7 @@ from src.db.models import QuizResult
 from src.quiz.grading import grade_answer
 from src.quiz.analysis import DEFAULT_WEAK_THRESHOLD, analyze_quiz_results
 from src.quiz.answer_schemas import QuizAnswerSubmission, QuizAnswerResult, QuizScoreAnalysis
+from src.feedback import apply_quiz_feedback
 
 router = APIRouter(prefix="/quiz", tags=["quiz"])
 
@@ -77,6 +78,11 @@ def submit_quiz_answer(
     result_row.score = grading["score"]
     result_row.rationale = grading["rationale"]
     db.commit()
+
+    # A completed attempt automatically feeds scores back into mastery and
+    # persists a new immutable schedule version.  Incomplete attempts are a
+    # no-op, so this remains safe to call after every submitted answer.
+    apply_quiz_feedback(db, user_id, result_row.quiz_id)
 
     return QuizAnswerResult(
         quiz_result_id=result_row.id,

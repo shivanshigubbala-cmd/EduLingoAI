@@ -148,6 +148,10 @@ class QuizResult(Base):
     is_correct = Column(Boolean, nullable=True)
     score = Column(Float, nullable=True)  # for short-answer LLM rubric grading, P6-SHR9
     rationale = Column(Text, nullable=True)
+    # Set after the completed quiz has updated mastery and produced a new
+    # schedule version.  This makes the grading-triggered feedback loop
+    # idempotent when an answer submission is retried.
+    feedback_applied_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     owner = relationship("User", back_populates="quiz_results")
