@@ -1,27 +1,52 @@
 """Auth dependencies for protected routes.
 
-STUB — this is a temporary placeholder for P2-SHR2 (file upload endpoint),
-which needs *some* notion of "the current user" to attach uploads to.
-
-Real implementation lands with P1-SRE4 (Sreehitha) — JWT cookie verification
-per the stack agreed in docs/architecture.md (P0-SHI1): backend issues a JWT
-on login, set as an httpOnly secure cookie, verified here on each request.
-
-TODO(P1-SRE4): replace get_current_user_id() body with real cookie/JWT
-verification. Once that lands, every route currently importing this stub
-(documents.py, etc.) should keep working unchanged — only this function's
-internals need to change, not its signature or return type.
+Real JWT cookie verification, per the stack agreed in docs/architecture.md
+(P0-SHI1): backend issues a JWT on login, set as an httpOnly secure cookie,
+verified here on each request.
 """
 import uuid
 
-_DEV_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+from fastapi import Depends, HTTPException, Request, status
+from jose import JWTError
+from sqlalchemy.orm import Session
+
+from src.db.models import User
+from src.db.session import get_db
+from .security import verify_access_token
 
 
-def get_current_user_id() -> uuid.UUID:
-    """Return the authenticated user's ID.
+def get_current_user(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> User:
+    """Verify the access_token cookie and return the full User row."""
+    token = request.cookies.get("access_token")
+    if token is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+    try:
+        payload = verify_access_token(token)
+        user_id = payload["sub"]
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+        )
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+        )
+    return user
 
-    STUB: always returns a fixed dev user ID. Replace with real JWT cookie
-    verification in P1-SRE4 — raise HTTPException(401) if the cookie is
-    missing/invalid instead of returning a hardcoded value.
-    """
-    return _DEV_USER_ID
+
+def get_current_user_id(
+    current_user: User = Depends(get_current_user),
+) -> uuid.UUID:
+    """Return just the authenticated user's ID — used by routes that only
+    need the ID (documents, diagnostic, scheduling, rag, quiz), not the
+    full User object."""
+    return current_user.id
