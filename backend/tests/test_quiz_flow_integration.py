@@ -14,7 +14,14 @@ from sqlalchemy.pool import StaticPool
 from src.db.base import Base
 from src.db import models
 from src.db.session import get_db
-from src.db.models import Document, DocumentStatus, SyllabusTopic, TopicLevel
+from src.db.models import (
+    Document,
+    DocumentStatus,
+    Session as UserSession,
+    SessionType,
+    SyllabusTopic,
+    TopicLevel,
+)
 from src.auth.dependencies import get_current_user_id
 from src.documents.routes import router as documents_router
 from src.quiz.router import router as quiz_router
@@ -105,6 +112,18 @@ def test_full_generate_then_grade_mcq_flow(mock_generate):
     body = answer_response.json()
     assert body["is_correct"] is True
     assert body["score"] == 1.0
+
+    # The final answer triggers P7-TEAM3 automatically: it applies the quiz
+    # score to mastery and saves an immutable schedule version.
+    db = TestingSessionLocal()
+    assert db.get(SyllabusTopic, topic_id).mastery == 1.0
+    assert (
+        db.query(UserSession)
+        .filter(UserSession.user_id == TEST_USER_ID, UserSession.type == SessionType.schedule)
+        .count()
+        == 1
+    )
+    db.close()
 
 
 @patch("src.documents.routes.generate_quiz_questions")
