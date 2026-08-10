@@ -6,9 +6,11 @@ import { useEffect, useState } from "react";
 import {
   generateQuiz,
   submitQuizAnswer,
+  getQuizAnalysis,
   QuizError,
   type QuizQuestionPublic,
   type QuizAnswerResult,
+  type QuizScoreAnalysis,
 } from "@/lib/quiz";
 
 type AnsweredEntry = {
@@ -22,6 +24,7 @@ export default function QuizPage() {
   const params = useParams<{ documentId: string }>();
 
   const [questions, setQuestions] = useState<QuizQuestionPublic[] | null>(null);
+  const [quizId, setQuizId] = useState<string | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [shortAnswerText, setShortAnswerText] = useState("");
@@ -40,7 +43,10 @@ export default function QuizPage() {
     if (!user || !params.documentId) return;
 
     generateQuiz(params.documentId)
-      .then((res) => setQuestions(res.questions))
+      .then((res) => {
+        setQuizId(res.quiz_id);
+        setQuestions(res.questions);
+      })
       .catch((err) => {
         const message =
           err instanceof QuizError ? err.message : "Failed to generate quiz.";
@@ -66,7 +72,7 @@ export default function QuizPage() {
   const isFinished = currentIndex >= allQuestions.length;
 
   if (isFinished) {
-    return <ResultsScreen answered={answered} />;
+    return <ResultsScreen answered={answered} quizId={quizId} />;
   }
 
   const currentQuestion = allQuestions[currentIndex];
@@ -160,9 +166,20 @@ export default function QuizPage() {
   );
 }
 
-function ResultsScreen({ answered }: { answered: AnsweredEntry[] }) {
+function ResultsScreen({ answered, quizId }: { answered: AnsweredEntry[]; quizId: string | null }) {
   const totalScore = answered.reduce((sum, a) => sum + a.result.score, 0);
   const maxScore = answered.length;
+  const [analysis, setAnalysis] = useState<QuizScoreAnalysis | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!quizId) return;
+    getQuizAnalysis(quizId)
+      .then(setAnalysis)
+      .catch((err) => {
+        setAnalysisError(err instanceof QuizError ? err.message : "Couldn't load topic analysis.");
+      });
+  }, [quizId]);
 
   return (
     <div>
@@ -170,6 +187,41 @@ function ResultsScreen({ answered }: { answered: AnsweredEntry[] }) {
       <p className="mt-2 text-gray-600">
         Score: {totalScore.toFixed(1)} / {maxScore}
       </p>
+
+      {analysisError && <p className="mt-3 text-sm text-red-600">{analysisError}</p>}
+      {analysis && (
+        <section className="mt-6 rounded-lg border border-gray-200 p-4">
+          <h2 className="text-lg font-semibold">Score by topic</h2>
+          <p className="mt-1 text-sm text-gray-600">
+            Overall: {analysis.average_score === null ? "Not graded yet" : `${Math.round(analysis.average_score * 100)}%`}
+          </p>
+          <div className="mt-4 space-y-3">
+            {analysis.topics.map((topic) => {
+              const percent = topic.average_score === null ? 0 : Math.round(topic.average_score * 100);
+              return (
+                <div key={topic.topic_id}>
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                    <span className="font-medium">{topic.topic_name}</span>
+                    <span className={topic.is_weak ? "font-medium text-red-700" : "text-gray-600"}>
+                      {topic.average_score === null ? "Not graded" : `${percent}%`}
+                      {topic.is_weak && " · Needs review"}
+                    </span>
+                  </div>
+                  <div className="mt-1 h-2 overflow-hidden rounded-full bg-gray-100">
+                    <div
+                      className={topic.is_weak ? "h-full bg-red-500" : "h-full bg-green-500"}
+                      style={{ width: `${percent}%` }}
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {topic.questions_answered} of {topic.questions_total} question(s) graded
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <div className="mt-6 flex flex-col gap-4">
         {answered.map(({ question, result }) => (
