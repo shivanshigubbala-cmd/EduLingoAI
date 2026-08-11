@@ -1,31 +1,10 @@
-"use client";
-
-import { useAuth } from "@/contexts/AuthContext";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import SuggestionFeed from "@/components/dashboard/SuggestionFeed";
 
 export default function DashboardPage() {
-  const { user, loading } = useAuth();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!loading && !user) {
-      router.push("/login");
-    }
-  }, [loading, user, router]);
-
-  if (loading) {
-    return <p className="text-sm text-gray-500">Loading\u2026</p>;
-  }
-
-  if (!user) return null;
-
   return (
-    <div>
-      <h1 className="text-2xl font-semibold">Dashboard</h1>
-      <p className="mt-2 text-gray-600">
-        Welcome, {user.name}! Your learning journey starts here.
-      </p>
-    </div>
+    <main className="min-h-screen bg-neutral-950 text-neutral-100 p-6 md:p-10 max-w-4xl mx-auto space-y-6">
+      <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+      <SuggestionFeed />
+    </main>
   );
 }
