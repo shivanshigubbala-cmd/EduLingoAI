@@ -19,6 +19,7 @@ itsdangerous
 # Config / settings management
 pydantic-settings
 python-dotenv
+email-validator
 
 # Testing
 pytest

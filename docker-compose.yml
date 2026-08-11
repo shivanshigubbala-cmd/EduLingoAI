@@ -1,35 +1,56 @@
-# Placeholder stack — Postgres + Qdrant are examples only.
-# Swap for whatever gets decided in P0-SRE2 (DB) and P0-SHR1 (vector store).
-version: "3.9"
+﻿version: "3.9"
 
 services:
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     ports:
       - "3000:3000"
     env_file: .env
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
   backend:
     build: ./backend
     ports:
       - "8000:8000"
     env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-student_ai}:${POSTGRES_PASSWORD:-change_me}@db:5432/${POSTGRES_DB:-student_ai_tool}
+      VECTOR_STORE_URL: http://vector-store:6333
+      OLLAMA_HOST: http://ollama:11434
     depends_on:
-      - db
-      - vector-store
+      db:
+        condition: service_healthy
+      vector-store:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
 
   db:
     image: postgres:16
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-student_ai}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-student_ai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
       POSTGRES_DB: ${POSTGRES_DB:-student_ai_tool}
     ports:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-student_ai} -d ${POSTGRES_DB:-student_ai_tool}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   vector-store:
     image: qdrant/qdrant:latest
@@ -37,7 +58,27 @@ services:
       - "6333:6333"
     volumes:
       - vector_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 10s
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/11434' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 10s
 
 volumes:
   db_data:
   vector_data:
+  ollama_data:
