@@ -9,6 +9,7 @@ was needed for P6-SHR9's grading to work.
 """
 import json
 import uuid
+import this_module_does_not_exist
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
