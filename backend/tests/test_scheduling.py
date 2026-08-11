@@ -1,6 +1,8 @@
+import time
 import uuid
 
 from sqlalchemy import create_engine
+
 from sqlalchemy.orm import sessionmaker
 
 from src.db.base import Base
@@ -94,8 +96,12 @@ def test_persisted_schedules_are_versioned_and_retrievable():
         {"days": [{"label": "Day 1", "topics": []}, {"label": "Day 2", "topics": []}]}
     )
 
+    import time
+
     first_version = persist_schedule(db, user_id, first_plan)
+    time.sleep(0.01)
     second_version = persist_schedule(db, user_id, second_plan)
+
 
     current = get_current_schedule(db, user_id)
     history = get_schedule_history(db, user_id)
@@ -167,7 +173,9 @@ def test_schedule_http_endpoints():
     v1_id = v1_data["version_id"]
 
     # POST /schedules again to create v2
+    time.sleep(0.01)
     create_resp2 = client.post("/schedules", json=post_payload)
+
     assert create_resp2.status_code == 201
     v2_data = create_resp2.json()
     v2_id = v2_data["version_id"]

@@ -10,16 +10,32 @@ was needed for P6-SHR9's grading to work.
 import json
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import get_current_user_id
 from src.db.session import get_db
 from src.db.models import QuizResult
 from src.quiz.grading import grade_answer
-from src.quiz.answer_schemas import QuizAnswerSubmission, QuizAnswerResult
+from src.quiz.analysis import DEFAULT_WEAK_THRESHOLD, analyze_quiz_results
+from src.quiz.answer_schemas import QuizAnswerSubmission, QuizAnswerResult, QuizScoreAnalysis
+from src.feedback import apply_quiz_feedback
 
 router = APIRouter(prefix="/quiz", tags=["quiz"])
+
+
+@router.get("/{quiz_id}/analysis", response_model=QuizScoreAnalysis)
+def get_quiz_analysis(
+    quiz_id: uuid.UUID,
+    weak_threshold: float = Query(DEFAULT_WEAK_THRESHOLD, ge=0.0, le=1.0),
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+) -> QuizScoreAnalysis:
+    """Return per-topic scores and weak-area flags for a quiz attempt (P6-SHI11)."""
+    try:
+        return analyze_quiz_results(db, user_id, quiz_id, weak_threshold)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/{quiz_result_id}/answer", response_model=QuizAnswerResult)
@@ -62,6 +78,11 @@ def submit_quiz_answer(
     result_row.score = grading["score"]
     result_row.rationale = grading["rationale"]
     db.commit()
+
+    # A completed attempt automatically feeds scores back into mastery and
+    # persists a new immutable schedule version.  Incomplete attempts are a
+    # no-op, so this remains safe to call after every submitted answer.
+    apply_quiz_feedback(db, user_id, result_row.quiz_id)
 
     return QuizAnswerResult(
         quiz_result_id=result_row.id,
